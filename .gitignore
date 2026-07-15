@@ -1,0 +1,34 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# Local data and generated outputs
+data/raw/
+data/interim/
+outputs/*
+!outputs/.gitkeep
+tmp/
+
+# Large model artifacts. Keep small placeholder files only.
+models/*.pt
+models/*.pth
+models/*.h5
+models/*.onnx
+models/*.safetensors
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/

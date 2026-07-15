@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dukaan-ai"
+version = "0.1.0"
+description = "Multimodal deep learning and OCR pipeline that converts offline MSME records into a digital ERP."
+requires-python = ">=3.10"
+authors = [{ name = "Haresh" }]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
