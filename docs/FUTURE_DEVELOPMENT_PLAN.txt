@@ -1,0 +1,69 @@
+# Future Development Plan
+
+## Current Phase: Startup-Ready Proof of Concept
+
+The platform now has:
+
+- Next.js product UI for conversion and workspace management.
+- FastAPI backend for conversion, generated outputs, authentication, and CRUD.
+- Upload paths for handwritten note images and product photos.
+- Backend node visibility for OCR, product vision, NER, graph, forecasting, ERP, and export.
+- Generated ERP browser preview embedded inside the platform.
+- Demo owner authentication with bearer token.
+- CRUD endpoints for generated inventory, customer CRM, and invoices.
+- Export outputs: JSON, CSVs, Markdown report, and ERP HTML.
+
+## Phase 1: Academic Completion
+
+Goal: satisfy the deep-learning project rubric.
+
+1. Train CRNN + CTC ledger OCR on synthetic ledger lines plus IIIT-HW/local handwriting.
+2. Train LSTM demand forecasting and compare against moving-average baseline.
+3. Add OCR character error rate and forecasting MAE/RMSE/MAPE/R2 to README.
+4. Add training curves, confusion/error matrices, and evaluation notebook output.
+5. Convert `docs/FINAL_REPORT.md` into IEEE-style `docs/FINAL_REPORT.pdf`.
+6. Record demo screenshots or a 3-5 minute demo video.
+
+## Phase 2: Real SaaS MVP
+
+Goal: replace local-demo infrastructure with production-grade app services.
+
+1. Replace demo auth with JWT/OAuth, password hashing, tenant isolation, and refresh tokens.
+2. Move workspace state from JSON files to PostgreSQL.
+3. Add role-based access: owner, staff, accountant, auditor.
+4. Add field-level CRUD forms instead of JSON row editing.
+5. Add audit log for every generated row and human correction.
+6. Add conversion job queue with progress updates via WebSockets.
+7. Store uploads in S3-compatible object storage.
+8. Add invoice PDF generation and GST-ready invoice templates.
+
+## Phase 3: Deep Learning Upgrade
+
+Goal: make the perception models genuinely strong.
+
+1. Fine-tune TrOCR on Indic ledger handwriting.
+2. Fine-tune MuRIL/IndicBERT for Hinglish/Tanglish order NER.
+3. Train product metric-learning model with open-set rejection.
+4. Add active learning: corrections in the CRUD workspace become labeled data.
+5. Add anomaly autoencoder for suspicious inventory or ledger entries.
+6. Add model registry and versioned inference endpoints.
+
+## Phase 4: Field Pilot
+
+Goal: validate with real MSME users.
+
+1. Run pilot with 5-10 shops and consented data.
+2. Measure OCR correction rate, time saved, inventory accuracy, and repeat usage.
+3. Add multilingual UI for Hindi, Tamil, Telugu, and English.
+4. Add offline-first mobile capture with on-device preprocessing.
+5. Integrate WhatsApp Business API for direct order ingestion.
+
+## Phase 5: Scale
+
+Goal: make the system investable and deployable.
+
+1. Multi-tenant deployment on managed cloud.
+2. Secure data retention and deletion policy.
+3. SOC2-style logging and access control practices.
+4. Billing, onboarding, and merchant support workflows.
+5. Partnerships with kirana associations, local accountants, and MSME lenders.

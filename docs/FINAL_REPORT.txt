@@ -1,0 +1,37 @@
+# Project Synapse ERP: Multimodal Deep Learning for Offline MSME Digitization
+
+## Abstract
+
+This project proposes an agentic multimodal deep-learning system that converts offline shop records into a digital ERP. The system reads handwritten ledgers, product photos, and WhatsApp-style orders, then generates structured inventory, customer CRM, invoices, and analytics. The primary trained modules are ledger OCR and demand forecasting, with product metric learning and code-mixed NER included as extensible model paths.
+
+## Introduction
+
+Small merchants often maintain business data in paper ledgers and informal chats. This creates a data-access problem: the records exist, but they cannot directly power software. Synapse ERP treats digitization as a perception problem before treating it as an ERP problem.
+
+## Related Work
+
+The literature survey reviews CRNN/CTC, TrOCR, MuRIL, prototypical networks, N-BEATS, Temporal Fusion Transformer, and LaBSE. These works motivate the model choices but leave a gap in end-to-end MSME digitization across handwriting, images, and chat.
+
+## Methodology
+
+The system has three perception paths: ledger OCR, product recognition, and order NER. Extracted entities are normalized into a business knowledge graph. The graph feeds the ERP renderer and the intelligence models. The first intelligence model is an LSTM demand forecaster trained on SKU-level demand windows.
+
+## Results
+
+Initial results should be filled after running:
+
+```powershell
+python src/train_ledger_ocr.py --epochs 3 --samples 256
+python src/train_forecaster.py --epochs 10
+```
+
+The generated metrics are saved in `outputs/metrics/`.
+
+## Conclusion
+
+Synapse ERP demonstrates how deep learning can unlock offline business data without requiring typing or technical skill from the shop owner. The proof of concept is designed for free-tier training and a deployable web demo, with a roadmap toward offline mobile inference.
+
+## References
+
+Use the references listed in `LITERATURE_SURVEY.md` and format them in IEEE style for the final PDF.
+

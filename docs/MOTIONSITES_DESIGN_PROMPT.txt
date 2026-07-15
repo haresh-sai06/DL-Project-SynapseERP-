@@ -1,0 +1,15 @@
+# MotionSites-Inspired Design Prompt
+
+Source of inspiration: https://motionsites.ai/
+
+Prompt used for the next-phase platform UI:
+
+> Premium dark SaaS hero for "Synapse ERP", an offline-to-SaaS conversion platform for Indian MSMEs. First viewport must be usable, not just marketing. Show a left-side conversion cockpit with upload zones for handwritten khata images, product photos, WhatsApp orders, and a right-side cinematic backend graph with OCR, product vision, NER, knowledge graph, forecast, ERP, export nodes. Style: MotionSites-inspired black editorial canvas, luminous mint and amber accents, crisp cards, glassy panels, high-contrast typography, subtle motion, premium AI startup energy.
+
+Design translation:
+
+- Dark premium canvas, not a plain student dashboard.
+- First viewport includes the actual conversion controls.
+- Backend nodes are visible as product primitives.
+- Output formats are explicit: ERP HTML, JSON, CSVs, report.
+- Uses the existing FastAPI conversion backend instead of mocking the business logic.

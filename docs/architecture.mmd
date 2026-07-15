@@ -1,0 +1,24 @@
+flowchart LR
+    A1[Handwritten khata photo] --> B1[Ledger OCR: CRNN + CTC / TrOCR]
+    A2[Product reference photos] --> B2[Few-shot product encoder]
+    A3[WhatsApp chat orders] --> B3[Code-mixed NER: MuRIL / IndicBERT]
+
+    B1 --> C[Business Knowledge Graph]
+    B2 --> C
+    B3 --> C
+
+    C --> D1[Inventory]
+    C --> D2[Customer CRM]
+    C --> D3[Invoices]
+    C --> E[Intelligence models]
+
+    E --> F1[Demand forecast]
+    E --> F2[Credit risk / churn]
+    E --> F3[Anomaly detection]
+
+    D1 --> G[Generated ERP dashboard]
+    D2 --> G
+    D3 --> G
+    F1 --> G
+    F2 --> G
+    F3 --> G

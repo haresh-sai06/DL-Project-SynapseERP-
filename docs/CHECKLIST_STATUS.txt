@@ -1,0 +1,27 @@
+# Checklist Status
+
+## Completed in this build
+
+| Phase | Requirement | Status |
+| --- | --- | --- |
+| 01 | `PROPOSAL.md` with objective, datasets, methodology, outcome | Done |
+| 02 | `LITERATURE_SURVEY.md` with at least 5 papers and gap analysis | Done |
+| 03 | Dataset description and EDA notebook | Started: synthetic 1200-sample generator plus `notebooks/EDA.ipynb` |
+| 04 | Architecture diagram | Done: `docs/architecture.png` and `docs/architecture.mmd` |
+| 05 | Modular source code | Done: preprocessing, model, training, prediction, API, ERP renderer |
+| 06 | Evaluation notebook | Started: `notebooks/Evaluation.ipynb` reads generated metrics |
+| 07 | Required folder structure and `.gitignore` | Done |
+| 08 | Final report | Started: `docs/FINAL_REPORT.md` draft |
+| 09 | Live demo | Done: `python scripts/run_demo.py` generates `outputs/erp/index.html` |
+| 10 | Innovation and deployment readiness | Started: README explains novelty, API, Streamlit, free-tier scope |
+
+## Still needed before final submission
+
+1. Fill roll number and any faculty-specific details.
+2. Install DL dependencies and run OCR/forecast training scripts.
+3. Add real training metrics, loss curves, confusion matrix or OCR error metrics.
+4. Convert `docs/FINAL_REPORT.md` into IEEE-style `docs/FINAL_REPORT.pdf`.
+5. Record demo screenshots or `assets/demo.gif`.
+6. Initialize a personal public GitHub repo named `DL_<ProjectTitle>_<RollNo>`.
+7. Make at least 5 meaningful commits under the student's own account.
+8. Tag the final release as `v1.0.0`.

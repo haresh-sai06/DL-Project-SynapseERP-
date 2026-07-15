@@ -1,0 +1,12 @@
+kavya: need 1 kg atta today
+salim: bhaiya 1l oil bhej do
+kavya: bhaiya 5kg sugar bhej do
+mahesh: bhaiya 5kg rice bhej do
+anita: bhaiya 1l tel bhej do
+ramesh: need 2 kg chini today
+mahesh: need 1 kg dal today
+ramesh: need 2 pack chai today
+mahesh: bhaiya 1kg sugar bhej do
+salim: dal 5kg pack kar dena
+anita: kal ke liye 2 kg atta
+mahesh: kal ke liye 5 kg chini

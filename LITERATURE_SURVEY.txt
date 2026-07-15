@@ -1,0 +1,31 @@
+# Literature Survey
+
+## Survey Table
+
+| No. | Paper | Year | Method | Result / Contribution | Gap for Synapse ERP |
+| ---: | --- | ---: | --- | --- | --- |
+| 1 | Shi, Bai, and Yao, "An End-to-End Trainable Neural Network for Image-based Sequence Recognition and Its Application to Scene Text Recognition" | 2015 | CRNN: CNN visual encoder, recurrent sequence model, CTC transcription | End-to-end sequence recognition without character-level segmentation | Focuses on scene text, not smudged Indic ledger handwriting or business-field extraction |
+| 2 | Li et al., "TrOCR: Transformer-based Optical Character Recognition with Pre-trained Models" | 2021 | Vision Transformer encoder plus text Transformer decoder | Strong OCR performance using pretrained image and language transformers | Needs domain fine-tuning for Indian ledger layouts, Indic scripts, and noisy paper photos |
+| 3 | Khanuja et al., "MuRIL: Multilingual Representations for Indian Languages" | 2021 | Indian-language pretrained transformer with translated/transliterated signals | Improves representation of Indian languages and transliterated text | Must be adapted from general language tasks to WhatsApp order-slot tagging |
+| 4 | Snell, Swersky, and Zemel, "Prototypical Networks for Few-shot Learning" | 2017 | Metric space learning with class prototypes | Classifies new classes from few examples | Needs open-set rejection and noisy shelf-photo robustness for local products |
+| 5 | Oreshkin et al., "N-BEATS: Neural basis expansion analysis for interpretable time series forecasting" | 2019 | Deep residual fully connected forecasting blocks | Strong univariate forecasting with interpretable extensions | Does not directly solve sparse SKU-level shop demand with promotions and informal credit cycles |
+| 6 | Lim et al., "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting" | 2019 | Recurrent layers, attention, gating, variable selection | Interpretable multi-horizon forecasting | More complex than needed for the first proof of concept; planned as an upgrade over LSTM |
+| 7 | Feng et al., "Language-agnostic BERT Sentence Embedding" | 2020 | Multilingual sentence embeddings in a shared vector space | Enables cross-lingual semantic matching | Useful for SKU alias matching, but must be combined with product images and local spellings |
+
+## Gap Analysis
+
+Existing OCR, few-shot vision, multilingual NLP, and forecasting papers solve important subproblems, but they are usually evaluated separately. A small shop needs a fused system: handwriting, product images, and informal chats must become one consistent business database. Synapse ERP contributes this integration layer while keeping the model claims honest: the OCR, NER/product, and forecasting modules are the trained DL components, while ERP generation is treated as software orchestration.
+
+## Justification for Chosen Approach
+
+CRNN + CTC is selected as the OCR baseline because it can learn from line-level labels without character box annotations. TrOCR is the planned upgrade because transformer pretraining helps when handwriting data is limited. MuRIL/IndicBERT are selected because Indian merchants often use code-mixed and transliterated language. Prototypical metric learning is selected because shopkeepers may provide only one or two product reference photos. LSTM forecasting is selected as the first trainable intelligence model because it directly maps digitized transaction history to inventory decisions and satisfies the course RNN/LSTM requirement.
+
+## References
+
+1. B. Shi, X. Bai, and C. Yao, "An End-to-End Trainable Neural Network for Image-based Sequence Recognition and Its Application to Scene Text Recognition," arXiv:1507.05717, 2015. https://arxiv.org/abs/1507.05717
+2. M. Li et al., "TrOCR: Transformer-based Optical Character Recognition with Pre-trained Models," arXiv:2109.10282, 2021. https://arxiv.org/abs/2109.10282
+3. S. Khanuja et al., "MuRIL: Multilingual Representations for Indian Languages," arXiv:2103.10730, 2021. https://arxiv.org/abs/2103.10730
+4. J. Snell, K. Swersky, and R. S. Zemel, "Prototypical Networks for Few-shot Learning," arXiv:1703.05175, 2017. https://arxiv.org/abs/1703.05175
+5. B. N. Oreshkin, D. Carpov, N. Chapados, and Y. Bengio, "N-BEATS: Neural basis expansion analysis for interpretable time series forecasting," arXiv:1905.10437, 2019. https://arxiv.org/abs/1905.10437
+6. B. Lim, S. O. Arik, N. Loeff, and T. Pfister, "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting," arXiv:1912.09363, 2019. https://arxiv.org/abs/1912.09363
+7. F. Feng, Y. Yang, D. Cer, N. Arivazhagan, and W. Wang, "Language-agnostic BERT Sentence Embedding," arXiv:2007.01852, 2020. https://arxiv.org/abs/2007.01852

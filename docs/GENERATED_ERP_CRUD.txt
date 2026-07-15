@@ -1,0 +1,44 @@
+# Generated ERP HTML CRUD
+
+The generated ERP output is no longer a static HTML report.
+
+Every `erp/index.html` produced by the conversion pipeline is now a standalone mini ERP application with:
+
+- Login screen
+- Demo credentials: `synapse-demo / 1234`
+- Inventory CRUD
+- Customer CRM CRUD
+- Invoice CRUD
+- Searchable tables
+- Add/edit modal forms
+- Delete actions
+- Live analytics updates
+- Local browser persistence through `localStorage`
+- JSON export
+- CSV export per resource
+
+## Where It Is Generated
+
+Renderer:
+
+```text
+src/synapse_erp/erp.py
+```
+
+Default demo output:
+
+```text
+outputs/erp/index.html
+```
+
+Conversion-specific output:
+
+```text
+outputs/conversions/<conversion_id>/erp/index.html
+```
+
+## Important Scope Note
+
+This is intentionally self-contained so it works as a generated artifact. The CRUD state is stored locally in the user's browser, which makes the file easy to demo and submit.
+
+For production SaaS, the same CRUD screens should connect to the FastAPI workspace endpoints and persist to PostgreSQL.
