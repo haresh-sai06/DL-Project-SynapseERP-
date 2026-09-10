@@ -79,7 +79,7 @@ def _get_cached(key: str, ttl: int) -> Optional[Any]:
         if item is not None and (_now() - item.fetched_at) < ttl:
             return item.value
     file_value = _read_file_cache(key)
-    if file_value is not None:
+    if file_value is not None and _cache_age_seconds(file_value) < ttl:
         with _LOCK:
             _MEMORY_CACHE[key] = _Cached(file_value, _now())
         return file_value
@@ -90,6 +90,25 @@ def _set_cached(key: str, value: Any) -> None:
     with _LOCK:
         _MEMORY_CACHE[key] = _Cached(value, _now())
     _write_file_cache(key, value)
+
+
+def _cache_age_seconds(value: Any) -> float:
+    if not isinstance(value, dict) or not value.get("fetched_at"):
+        return float("inf")
+    try:
+        fetched = datetime.fromisoformat(str(value["fetched_at"]).replace("Z", "+00:00"))
+        return max(0.0, _now() - fetched.timestamp())
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def _stale_cache(key: str, empty: dict[str, Any]) -> dict[str, Any]:
+    cached = _read_file_cache(key)
+    value = dict(cached) if isinstance(cached, dict) else dict(empty)
+    value["live"] = False
+    value["cache_status"] = "stale" if cached else "unavailable"
+    value["age_seconds"] = round(_cache_age_seconds(value), 1) if cached else None
+    return value
 
 
 def _http_get_json(url: str, params: Optional[Dict[str, str]] = None, timeout: int = 12) -> Dict[str, Any]:
@@ -125,6 +144,7 @@ def fetch_fx_rates(base: str = "USD") -> Dict[str, Any]:
         "source": "Frankfurter / ECB",
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "live": True,
+        "cache_status": "fresh",
     }
     _set_cached(key, result)
     return result
@@ -174,6 +194,7 @@ def fetch_crypto_prices(ids: Optional[List[str]] = None) -> Dict[str, Any]:
         "source": "CoinGecko",
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "live": True,
+        "cache_status": "fresh",
     }
     _set_cached(key, result)
     return result
@@ -215,6 +236,7 @@ def fetch_commodity_prices() -> Dict[str, Any]:
         "source": "gold-api.com",
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "live": bool(items),
+        "cache_status": "fresh" if items else "unavailable",
     }
     if items:
         _set_cached(key, result)
@@ -267,29 +289,30 @@ def get_market_snapshot() -> Dict[str, Any]:
     try:
         fx = fetch_fx_rates("USD")
     except Exception:
-        fx = _read_file_cache("fx_USD") or {
+        fx = _stale_cache("fx_USD", {
             "base": "USD",
             "date": None,
-            "rates": {"INR": 83.0},
+            "rates": {},
             "source": "offline-cache",
-            "live": False,
-        }
+        })
         offline = True
 
     try:
         crypto = fetch_crypto_prices()
     except Exception:
-        crypto = _read_file_cache("crypto_" + "_".join(c[0] for c in DEFAULT_COINS)) or {
+        crypto = _stale_cache("crypto_" + "_".join(c[0] for c in DEFAULT_COINS), {
             "coins": [],
             "source": "offline-cache",
-            "live": False,
-        }
+        })
         offline = True
 
     try:
         commodities = fetch_commodity_prices()
     except Exception:
-        commodities = _read_file_cache("commodities") or {"commodities": [], "source": "offline-cache", "live": False}
+        commodities = _stale_cache(
+            "commodities",
+            {"commodities": [], "source": "offline-cache"},
+        )
         offline = True
 
     return {
@@ -298,6 +321,11 @@ def get_market_snapshot() -> Dict[str, Any]:
         "commodities": commodities,
         "live": not offline,
         "generated_at": datetime.utcnow().isoformat() + "Z",
+        "sources": [
+            {"name": fx.get("source"), "live": fx.get("live", False), "cache_status": fx.get("cache_status")},
+            {"name": crypto.get("source"), "live": crypto.get("live", False), "cache_status": crypto.get("cache_status")},
+            {"name": commodities.get("source"), "live": commodities.get("live", False), "cache_status": commodities.get("cache_status")},
+        ],
         "note": "Live market data. Rates are for import-cost awareness, not financial advice."
         if not offline
         else "Network unavailable - showing last cached snapshot.",

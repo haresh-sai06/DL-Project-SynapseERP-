@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, KeyRound, Pencil, Plus, Save, Trash2 } from "lucide-react";
-import { API_BASE, ensureDemoAuth, fetchWorkspace, loadConversion, loadWorkspace, saveWorkspace } from "../lib/flow";
+import { API_BASE, fetchWorkspace, getWorkspaceToken, loadConversion, loadWorkspace } from "../lib/flow";
 
 const resourceKeys = {
   inventory: "sku",
@@ -46,19 +46,19 @@ export default function WorkspacePage() {
       setMessage("Run a conversion first.");
       return;
     }
-    const nextWorkspace = await fetchWorkspace(conversionId);
+    const nextWorkspace = await fetchWorkspace(conversionId, conversion);
     setWorkspace(nextWorkspace);
-    setMessage("Demo owner authenticated. Workspace opened.");
+    setMessage("Conversion-scoped access verified. Workspace is current.");
   }
 
   async function addRow() {
     if (!conversion?.conversion_id) return setMessage("Run a conversion first.");
-    const auth = await ensureDemoAuth();
+    const token = getWorkspaceToken(conversion);
     const item = defaultItem(activeResource);
     const response = await fetch(`${API_BASE}/api/workspaces/${conversion.conversion_id}/${activeResource}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${auth.access_token}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(item)
@@ -75,13 +75,13 @@ export default function WorkspacePage() {
 
   async function saveEdit() {
     if (!editing || !conversion?.conversion_id) return;
-    const auth = await ensureDemoAuth();
+    const token = getWorkspaceToken(conversion);
     const response = await fetch(
       `${API_BASE}/api/workspaces/${conversion.conversion_id}/${editing.resource}/${encodeURIComponent(editing.id)}`,
       {
         method: "PATCH",
         headers: {
-          Authorization: `Bearer ${auth.access_token}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
         body: draft
@@ -96,13 +96,13 @@ export default function WorkspacePage() {
 
   async function deleteRow(row) {
     if (!conversion?.conversion_id) return;
-    const auth = await ensureDemoAuth();
+    const token = getWorkspaceToken(conversion);
     const itemId = String(row[activeKey]);
     const response = await fetch(
       `${API_BASE}/api/workspaces/${conversion.conversion_id}/${activeResource}/${encodeURIComponent(itemId)}`,
       {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${auth.access_token}` }
+        headers: { Authorization: `Bearer ${token}` }
       }
     );
     if (!response.ok) throw new Error(await response.text());
@@ -127,8 +127,8 @@ export default function WorkspacePage() {
       <section className="step-shell">
         <div className="step-intro">
           <p className="eyebrow">Step 4</p>
-          <h1>Open the authenticated CRUD workspace.</h1>
-          <p>Demo login is automatic using shop owner credentials. You can add, edit, and delete generated inventory, customers, and invoices.</p>
+          <h1>Work with the converted business records.</h1>
+          <p>This workspace is protected by a token created for this conversion. Changes are persisted by the backend and reflected on refresh.</p>
         </div>
 
         <div className="step-card workspace-page-card">
@@ -152,7 +152,7 @@ export default function WorkspacePage() {
             <div className="button-row slim-buttons">
               <button className="secondary-button" type="button" onClick={() => runAction(() => openWorkspace())}>
                 <KeyRound size={16} />
-                Login/open
+                Refresh data
               </button>
               <button className="primary-button" type="button" onClick={() => runAction(addRow)}>
                 <Plus size={16} />
@@ -170,7 +170,7 @@ export default function WorkspacePage() {
             </div>
             <div className="editor-card">
               <h3>Row editor</h3>
-              <p>Select a row, edit JSON, and save. This proves CRUD before field-level forms are added.</p>
+              <p>Select a row, review its complete record, and save a validated JSON update.</p>
               <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Select a row to edit." />
               <button className="primary-button" type="button" disabled={!editing} onClick={() => runAction(saveEdit)}>
                 <Save size={16} />

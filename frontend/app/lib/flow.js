@@ -1,8 +1,7 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
-const CONVERSION_KEY = "dukaan_ai_conversion";
-const WORKSPACE_KEY = "dukaan_ai_workspace";
-const AUTH_KEY = "dukaan_ai_auth";
+const CONVERSION_KEY = "synapse_erp_conversion";
+const WORKSPACE_KEY = "synapse_erp_workspace";
 
 export function absoluteUrl(url) {
   if (!url) return "";
@@ -31,36 +30,20 @@ export function loadWorkspace() {
   return loadJson(WORKSPACE_KEY);
 }
 
-export function saveAuth(auth) {
-  saveJson(AUTH_KEY, auth);
-}
-
-export function loadAuth() {
-  return loadJson(AUTH_KEY);
-}
-
 export function getErpOutput(conversion) {
   return conversion?.outputs?.find((output) => output.format === "html");
 }
 
-export async function ensureDemoAuth() {
-  const existing = loadAuth();
-  if (existing?.access_token) return existing;
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shop_id: "dukaan-demo", pin: "1234" })
-  });
-  if (!response.ok) throw new Error(await response.text());
-  const auth = await response.json();
-  saveAuth(auth);
-  return auth;
+export function getWorkspaceToken(conversion = loadConversion()) {
+  const token = conversion?.workspace_token;
+  if (!token) throw new Error("This conversion has no workspace access token. Run a new conversion.");
+  return token;
 }
 
-export async function fetchWorkspace(conversionId) {
-  const auth = await ensureDemoAuth();
+export async function fetchWorkspace(conversionId, conversion = loadConversion()) {
+  const token = getWorkspaceToken(conversion);
   const response = await fetch(`${API_BASE}/api/workspaces/${conversionId}`, {
-    headers: { Authorization: `Bearer ${auth.access_token}` }
+    headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) throw new Error(await response.text());
   const workspace = await response.json();

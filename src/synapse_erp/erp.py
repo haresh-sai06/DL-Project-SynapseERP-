@@ -1,4 +1,4 @@
-"""Standalone ERP HTML renderer with built-in auth and CRUD."""
+"""Standalone ERP HTML renderer for local review, CRUD, and export."""
 
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def _html(snapshot: BusinessSnapshot) -> str:
       font-size: 13px;
       font-weight: 700;
     }
-    .app { display: none; min-height: 100vh; }
+    .app { display: block; min-height: 100vh; }
     .sidebar {
       position: fixed;
       inset: 0 auto 0 0;
@@ -380,32 +380,6 @@ def _html(snapshot: BusinessSnapshot) -> str:
   </style>
 </head>
 <body>
-  <section id="loginScreen" class="login-screen">
-    <div class="login-copy">
-      <p class="helper">Synapse ERP</p>
-      <h1>A complete shop system from offline records.</h1>
-      <p>This generated ERP includes authentication, inventory CRUD, customer CRM, invoice management, analytics, and local export tools inside this single HTML file.</p>
-    </div>
-    <div class="login-panel-wrap">
-      <form id="loginForm" class="login-panel">
-        <div class="brand">
-          <div class="brand-mark">S</div>
-          <div>
-            <strong>Synapse ERP</strong>
-            <span>Secure shop workspace</span>
-          </div>
-        </div>
-        <label for="shopId">Shop ID</label>
-        <input id="shopId" value="synapse-demo" autocomplete="username">
-        <label for="pin">Owner PIN</label>
-        <input id="pin" type="password" value="1234" autocomplete="current-password">
-        <button class="primary" type="submit">Login to ERP</button>
-        <p class="helper">Demo credentials: <strong>synapse-demo</strong> / <strong>1234</strong>. Changes are saved locally in this browser.</p>
-        <p id="loginError" class="error"></p>
-      </form>
-    </div>
-  </section>
-
   <section id="app" class="app">
     <aside class="sidebar">
       <div class="brand">
@@ -434,7 +408,6 @@ def _html(snapshot: BusinessSnapshot) -> str:
         <div class="toolbar">
           <button id="addButton" class="primary">Add row</button>
           <button id="resetButton" class="secondary">Reset generated data</button>
-          <button id="logoutButton" class="secondary">Logout</button>
         </div>
       </header>
 
@@ -494,7 +467,6 @@ def _html(snapshot: BusinessSnapshot) -> str:
   <script>
     const INITIAL_DATA = __INITIAL_DATA__;
     const STORAGE_KEY = "synapse-generated-erp:" + location.pathname + ":" + (INITIAL_DATA.analytics?.total_orders || 0);
-    const SESSION_KEY = STORAGE_KEY + ":session";
     const schemas = {
       inventory: [
         ["sku", "SKU", "text"],
@@ -530,29 +502,11 @@ def _html(snapshot: BusinessSnapshot) -> str:
     let activeView = "inventory";
     let editingId = null;
 
-    const loginScreen = document.getElementById("loginScreen");
-    const app = document.getElementById("app");
     const tableWrap = document.getElementById("tableWrap");
     const searchBox = document.getElementById("searchBox");
     const modalBackdrop = document.getElementById("modalBackdrop");
     const formGrid = document.getElementById("formGrid");
 
-    document.getElementById("loginForm").addEventListener("submit", (event) => {
-      event.preventDefault();
-      const shopId = document.getElementById("shopId").value.trim();
-      const pin = document.getElementById("pin").value.trim();
-      if (shopId === "synapse-demo" && pin === "1234") {
-        localStorage.setItem(SESSION_KEY, "owner");
-        showApp();
-      } else {
-        document.getElementById("loginError").textContent = "Invalid shop ID or PIN.";
-      }
-    });
-    document.getElementById("logoutButton").addEventListener("click", () => {
-      localStorage.removeItem(SESSION_KEY);
-      loginScreen.style.display = "grid";
-      app.style.display = "none";
-    });
     document.getElementById("resetButton").addEventListener("click", () => {
       if (!confirm("Reset this ERP to the originally generated data?")) return;
       state = makeInitialState();
@@ -574,15 +528,7 @@ def _html(snapshot: BusinessSnapshot) -> str:
       });
     });
 
-    if (localStorage.getItem(SESSION_KEY)) {
-      showApp();
-    }
-
-    function showApp() {
-      loginScreen.style.display = "none";
-      app.style.display = "block";
-      render();
-    }
+    render();
 
     function makeInitialState() {
       return {

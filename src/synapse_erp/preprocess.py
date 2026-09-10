@@ -48,8 +48,9 @@ PRICE_BOOK = {
 }
 
 DATE_RE = re.compile(r"(?P<date>\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})")
-QTY_RE = re.compile(r"(?P<qty>\d+(?:\.\d+)?)\s*(?P<unit>kg|kgs|g|gm|l|ltr|pack|pcs|pc)?", re.I)
+QTY_RE = re.compile(r"\b(?P<qty>\d+(?:\.\d+)?)\s*(?P<unit>kg|kgs|g|gm|l|ltr|pack|packs|pcs|pc)\b", re.I)
 AMOUNT_RE = re.compile(r"(?:rs\.?|inr|₹)?\s*(?P<amount>\d+(?:\.\d+)?)", re.I)
+EXPLICIT_AMOUNT_RE = re.compile(r"(?:rs\.?|inr|₹)\s*(?P<amount>\d+(?:\.\d+)?)", re.I)
 
 
 def clean_text(text: str) -> str:
@@ -89,6 +90,8 @@ def normalize_unit(unit: str | None, sku: str) -> str:
         return "l"
     if unit in {"pcs", "pc"}:
         return "pcs"
+    if unit == "packs":
+        return "pack"
     return unit
 
 
@@ -165,10 +168,12 @@ def parse_whatsapp_order(text: str) -> OrderIntent:
 
     sku = canonicalize_sku(body)
     quantity, unit = extract_quantity(body, sku)
+    amount_match = EXPLICIT_AMOUNT_RE.search(body)
     return OrderIntent(
         customer=customer,
         item=sku,
         quantity=quantity,
         unit=unit,
         raw_text=text,
+        amount=float(amount_match.group("amount")) if amount_match else None,
     )

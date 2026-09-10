@@ -2,6 +2,8 @@
 
 Project Synapse ERP is a multimodal deep learning and OCR pipeline for digitizing offline Indian MSMEs. It ingests the records a small shop already has - handwritten khata ledger lines, product photos, and WhatsApp-style orders - and converts them into structured inventory, customer CRM, invoices, and analytics.
 
+For the full implementation, setup, API, data model, frontend, training, output, and limitations reference, see [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md).
+
 ## Problem Statement
 
 Many MSMEs already have business data, but it is trapped in notebooks, shelf photos, and informal chats. Existing bookkeeping apps still require manual typing, which is the main adoption barrier for owners with little technical skill. This project focuses on the deep-learning problem of converting messy offline records into structured business data.
@@ -53,14 +55,16 @@ The startup-ready platform uses a Next.js frontend with a FastAPI conversion bac
 | FastAPI fallback UI | `http://127.0.0.1:8000` | Backend-hosted conversion desk |
 | Service node registry | `/api/services` | Shows OCR, product vision, NER, graph, forecast, ERP, and export nodes |
 | Conversion endpoint | `/api/convert` | Runs one conversion job from uploaded files and text |
-| Demo conversion | `/api/demo-conversion` | Runs the pipeline with local demo images and sample orders |
+| Background conversion | `POST /api/conversions` | Queues submitted records and returns a job ID immediately |
+| Conversion status | `GET /api/conversions/<id>` | Returns measured stage progress, events, result, or failure |
+| Operations telemetry | `/api/observability` | Returns request latency, error rate, job outcomes, and recent events |
 | Live market data | `/api/live` | Real-time FX (Frankfurter/ECB) + crypto (CoinGecko) snapshot, cached |
 | History series | `/api/live/history` | Real daily FX history for charts and training |
 | Train forecaster | `/api/train/forecaster` | Trains the LSTM on REAL USD/INR data (or synthetic) |
 | Train vision | `/api/train/vision` | Trains the CNN on the REAL MNIST handwritten-digit dataset |
 | Model registry | `/api/models` | Lists trained artifacts and last metrics |
 | Generated artifacts | `outputs/conversions/<id>/` | Stores ERP HTML, JSON, CSVs, and report |
-| Demo auth | `/api/auth/login` | Returns a local bearer token for the generated workspace |
+| Workspace access | conversion result | Returns a conversion-scoped token; only its hash is stored server-side |
 | Generated workspace | `/api/workspaces/<id>` | Authenticated CRUD workspace for inventory, customers, and invoices |
 
 Run the backend:
@@ -103,11 +107,11 @@ Each conversion produces:
 | `conversion_report.md` | Markdown | Backend node report and summary |
 | `erp/index.html` | HTML | Browser-ready ERP dashboard |
 
-The generated `erp/index.html` is now a self-contained ERP application, not a static report. It includes demo login, inventory/customer/invoice CRUD, searchable tables, live analytics, local persistence, and JSON/CSV exports. See [docs/GENERATED_ERP_CRUD.md](docs/GENERATED_ERP_CRUD.md).
+The generated `erp/index.html` is a self-contained offline export with searchable tables and local interaction. The authoritative editable workspace is served by the protected workspace API.
 
 Beyond exported files, each conversion now opens as an authenticated workspace:
 
-- Demo login: `shop_id=synapse-demo`, `pin=1234`
+- Access: a unique bearer token is generated with each completed conversion; only its SHA-256 hash is persisted
 - CRUD resources: `inventory`, `customers`, `invoices`
 - API pattern: `/api/workspaces/<conversion_id>/<resource>`
 - Frontend behavior: the generated ERP HTML is embedded in a browser-style viewer, while the live workspace rows can be added, edited, and deleted.
@@ -199,6 +203,12 @@ Synapse ERP no longer runs on mocked numbers for its intelligence layer:
   (inspired by free templates such as TailAdmin, Aceternity UI, and SaaSFast):
   glass panels, gradient accents, live stat cards, SVG charts, and a dedicated
   Live Market Intelligence + Training console.
+- **Observed conversion jobs** — the capture flow starts a background job and
+  polls its real status. Every pipeline stage writes measured duration, source,
+  outcome, and trace ID to `outputs/logs/runtime-<date>.jsonl`.
+- **No injected business rows** — empty submissions are rejected, OCR uses the
+  installed checkpoint or explicit transcription, missing order prices remain
+  unpriced, and product-label confidence is not fabricated.
 
 ## Module Mapping
 

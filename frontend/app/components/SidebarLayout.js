@@ -4,13 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Activity, BarChart3, Box, Cpu, Download, FileJson, Grid3X3, Home, Menu, Radio, X,
+  Activity, BarChart3, Box, Cpu, Download, Gauge, Grid3X3, Home, Menu, Radio, X,
 } from "lucide-react";
 import { API_BASE } from "../lib/flow";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/live", label: "Live Dashboard", icon: Radio },
+  { href: "/operations", label: "Operations", icon: Gauge },
   { href: "/models", label: "Model Hub", icon: Cpu },
   { href: "/step-1", label: "Capture", icon: Box },
   { href: "/step-2", label: "Nodes", icon: Grid3X3 },

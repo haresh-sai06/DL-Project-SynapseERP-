@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-from synapse_erp.data.synthetic import generate_chat_orders, generate_ledger_lines
-from synapse_erp.preprocess import DEFAULT_UNIT, PRICE_BOOK, display_name, estimate_amount, parse_ledger_line, parse_whatsapp_order
+from synapse_erp.preprocess import DEFAULT_UNIT, display_name, parse_ledger_line, parse_whatsapp_order
 from synapse_erp.schema import (
     AnalyticsSummary,
     BusinessSnapshot,
@@ -39,11 +38,11 @@ class BusinessKnowledgeGraph:
             customer_last_item[record.customer] = record.item
 
         for index, order in enumerate(orders, start=1):
-            amount = estimate_amount(order.item, order.quantity)
-            revenue_by_sku[order.item] += amount
+            priced_amount = order.amount if order.amount is not None else 0.0
+            revenue_by_sku[order.item] += priced_amount
             qty_by_sku[order.item] += order.quantity
             unit_by_sku[order.item] = order.unit
-            customer_revenue[order.customer] += amount
+            customer_revenue[order.customer] += priced_amount
             customer_orders[order.customer] += 1
             customer_last_item[order.customer] = order.item
             invoices.append(
@@ -53,7 +52,7 @@ class BusinessKnowledgeGraph:
                     item=order.item,
                     quantity=order.quantity,
                     unit=order.unit,
-                    amount=amount,
+                    amount=order.amount,
                 )
             )
 
@@ -122,11 +121,11 @@ class BusinessKnowledgeGraph:
         high_values = [record for record in records if record.amount > 1000]
         if high_values:
             return f"{len(high_values)} unusually high ledger entries need review."
-        return "No high-value anomalies in the demo ledger."
+        return "No high-value anomalies in the submitted ledger."
 
 
 class SynapseERPPipeline:
-    """Offline-to-ERP pipeline with DL model slots and deterministic fallbacks."""
+    """Offline-to-ERP pipeline over submitted or model-extracted records."""
 
     def __init__(self) -> None:
         self.graph = BusinessKnowledgeGraph()
@@ -136,8 +135,8 @@ class SynapseERPPipeline:
         ledger_lines: list[str] | None = None,
         chat_lines: list[str] | None = None,
     ) -> BusinessSnapshot:
-        ledger_lines = ledger_lines if ledger_lines is not None else generate_ledger_lines(n=75)
-        chat_lines = chat_lines if chat_lines is not None else generate_chat_orders(n=12)
+        ledger_lines = ledger_lines or []
+        chat_lines = chat_lines or []
         records = [parse_ledger_line(line) for line in ledger_lines if line.strip()]
         orders = [parse_whatsapp_order(line) for line in chat_lines if line.strip()]
         return self.graph.build(records=records, orders=orders)
@@ -146,4 +145,3 @@ class SynapseERPPipeline:
         ledger_lines = ledger_path.read_text(encoding="utf-8").splitlines()
         chat_lines = chat_path.read_text(encoding="utf-8").splitlines()
         return self.ingest(ledger_lines=ledger_lines, chat_lines=chat_lines)
-

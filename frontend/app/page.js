@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, BrainCircuit, Cpu, FileJson, FileText, Radio, ShieldCheck, Sparkles, Tags } from "lucide-react";
+import { ArrowRight, BadgeCheck, BrainCircuit, Cpu, FileJson, FileText, Gauge, Radio, ShieldCheck, Sparkles, Tags } from "lucide-react";
 import LiveTicker from "./components/LiveTicker";
 import { API_BASE } from "./lib/flow";
 
@@ -7,14 +7,14 @@ const PRETRAINED_FEATURES = [
   {
     icon: FileText,
     title: "TrOCR Handwritten OCR",
-    desc: "Microsoft's pre-trained Transformer OCR (microsoft/trocr-base-handwritten) reads khata ledger lines without any fine-tuning.",
-    label: "Pre-trained on IAM handwriting",
+    desc: "Submitted ledger images run through the installed CRNN checkpoint; operator transcriptions are recorded as a separate, explicit source.",
+    label: "Source provenance included",
   },
   {
     icon: Tags,
-    title: "BERT Multilingual NER",
-    desc: "dslim/bert-base-NER extracts product names, quantities, prices, and customer names from Hinglish WhatsApp orders.",
-    label: "Fine-tuned NER model",
+    title: "Truthful order extraction",
+    desc: "The active conversion uses a deterministic code-mixed parser. The optional BERT endpoint stays clearly separated in the Model Hub.",
+    label: "No model overclaiming",
   },
   {
     icon: Cpu,
@@ -33,8 +33,8 @@ export default function LandingPage() {
           <h1>Convert an offline shop into a live SaaS workspace.</h1>
           <p>
             Synapse ERP turns handwritten khata photos, product images, and WhatsApp orders into inventory,
-            CRM, invoices, analytics, exports, and an authenticated CRUD workspace — powered by real
-            pre-trained deep learning models.
+            CRM, invoices, analytics, exports, and a protected CRUD workspace—with measured processing
+            stages and a durable event trail.
           </p>
           <div className="hero-actions">
             <Link className="primary-button hero-button" href="/step-1">
@@ -43,6 +43,9 @@ export default function LandingPage() {
             </Link>
             <Link className="secondary-button hero-button" href="/live">
               <Radio size={16} /> Live data &amp; training
+            </Link>
+            <Link className="secondary-button hero-button" href="/operations">
+              <Gauge size={16} /> Operations
             </Link>
           </div>
           <div className="landing-proof">
@@ -64,7 +67,7 @@ export default function LandingPage() {
           </div>
           <div className="visual-card top-card">
             <BadgeCheck size={18} />
-            <strong>9 backend nodes online</strong>
+            <strong>9 measured pipeline stages</strong>
           </div>
           <div className="visual-card bottom-card">
             <strong>Final output</strong>
@@ -78,7 +81,7 @@ export default function LandingPage() {
         <div className="showcase-head">
           <p className="eyebrow"><Cpu size={15} /> Pre-trained &amp; real-trained models</p>
           <h2>Production-grade deep learning out of the box</h2>
-          <p>No mocked pipelines. Every model either loads pre-trained weights or trains on real data.</p>
+          <p>Runtime behavior, training data, benchmark artifacts, and fallback state are labeled independently.</p>
         </div>
         <div className="showcase-grid">
           {PRETRAINED_FEATURES.map((f) => {

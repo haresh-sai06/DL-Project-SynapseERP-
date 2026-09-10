@@ -452,21 +452,15 @@ PLATFORM_HTML = r"""<!doctype html>
                 </div>
                 <div class="field">
                     <label for="productHints">Product names or SKU hints</label>
-                    <textarea id="productHints" name="product_hints">sugar
-rice
-parle-g</textarea>
+                    <textarea id="productHints" name="product_hints" placeholder="One operator-confirmed label per photo"></textarea>
                 </div>
                 <div class="field">
                     <label for="ledgerText">OCR assist text</label>
-                    <textarea id="ledgerText" name="ledger_text">2026-06-01 ramesh: chini 2 kg Rs 88
-2026-06-01 anita: rice 5 kg Rs 310
-2026-06-02 salim: parle-g 10 pack Rs 100</textarea>
+                    <textarea id="ledgerText" name="ledger_text" placeholder="2026-09-10 ramesh: chini 2 kg Rs 88"></textarea>
                 </div>
                 <div class="field">
                     <label for="chatText">WhatsApp chat orders</label>
-                    <textarea id="chatText" name="chat_text">kavya: bhaiya 2kg atta bhej do
-mahesh: need 1 l oil today
-anita: kal ke liye 3 kg dal</textarea>
+                    <textarea id="chatText" name="chat_text" placeholder="kavya: 2 kg atta Rs 76"></textarea>
                 </div>
                 <label>Output contract</label>
                 <div class="output-contract">
@@ -477,9 +471,8 @@ anita: kal ke liye 3 kg dal</textarea>
                 </div>
                 <div class="actions">
                     <button class="primary" id="runButton" type="submit">Run conversion</button>
-                    <button class="secondary" id="demoButton" type="button">Load demo</button>
                 </div>
-                <div class="notice">Ledger image OCR is wired as a backend node. Until trained CRNN/TrOCR weights are attached, the platform uses OCR assist text or a demo fallback while still saving and profiling uploaded images.</div>
+                <div class="notice">No sample rows are injected. Ledger images use the installed CRNN checkpoint, and unreadable results request an explicit transcription.</div>
                 <div id="localPreviews" class="preview-grid"></div>
             </form>
         </aside>
@@ -543,7 +536,6 @@ anita: kal ke liye 3 kg dal</textarea>
         const nodesEl = document.getElementById("nodes");
         const form = document.getElementById("convertForm");
         const runButton = document.getElementById("runButton");
-        const demoButton = document.getElementById("demoButton");
         const emptyState = document.getElementById("emptyState");
         const results = document.getElementById("results");
         const localPreviews = document.getElementById("localPreviews");
@@ -617,7 +609,7 @@ anita: kal ke liye 3 kg dal</textarea>
             document.getElementById("productTable").innerHTML = tableFromRows(result.product_catalog, [
                 { key: "display_name", label: "Product" },
                 { key: "sku", label: "SKU" },
-                { key: "confidence", label: "Confidence" },
+                { key: "source", label: "Label source" },
                 { key: "status", label: "Status" }
             ]);
             document.getElementById("downloads").innerHTML = result.outputs.map((output) => `
@@ -638,7 +630,6 @@ anita: kal ke liye 3 kg dal</textarea>
 
         function setBusy(isBusy) {
             runButton.disabled = isBusy;
-            demoButton.disabled = isBusy;
             runButton.textContent = isBusy ? "Converting..." : "Run conversion";
         }
 
@@ -662,19 +653,6 @@ anita: kal ke liye 3 kg dal</textarea>
             }
         }
 
-        async function loadDemo() {
-            setBusy(true);
-            try {
-                const response = await fetch("/api/demo-conversion", { method: "POST" });
-                if (!response.ok) {
-                    throw new Error(await response.text());
-                }
-                renderResult(await response.json());
-            } finally {
-                setBusy(false);
-            }
-        }
-
         function renderLocalPreviews() {
             const files = [
                 ...document.getElementById("ledgerImages").files,
@@ -689,7 +667,6 @@ anita: kal ke liye 3 kg dal</textarea>
         }
 
         form.addEventListener("submit", runConversion);
-        demoButton.addEventListener("click", loadDemo);
         document.getElementById("ledgerImages").addEventListener("change", renderLocalPreviews);
         document.getElementById("productImages").addEventListener("change", renderLocalPreviews);
         loadServices();

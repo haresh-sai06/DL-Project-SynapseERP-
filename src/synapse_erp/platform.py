@@ -6,14 +6,14 @@ import csv
 import hashlib
 import json
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
-from synapse_erp.config import OUTPUT_DIR
-from synapse_erp.data.synthetic import generate_ledger_lines
+from synapse_erp.config import MODEL_DIR, OUTPUT_DIR
 from synapse_erp.erp import render_erp_html
 from synapse_erp.pipeline import SynapseERPPipeline
 from synapse_erp.preprocess import canonicalize_sku, display_name
@@ -26,7 +26,7 @@ class ServiceNode:
     role: str
     status: str = "online"
     detail: str = ""
-    latency_ms: int = 0
+    latency_ms: float = 0
 
 
 @dataclass(frozen=True)
@@ -46,8 +46,9 @@ class ProductCandidate:
     sku: str
     display_name: str
     source_image: str
-    confidence: float
+    confidence: float | None
     status: str
+    source: str
 
 
 @dataclass(frozen=True)
@@ -80,11 +81,11 @@ class StartupConversionService:
     service_catalog = [
         ServiceNode("gateway", "Upload Gateway", "Receives note images, product photos, and chat text."),
         ServiceNode("preprocess", "Image Preprocessor", "Validates files, stores previews, and extracts image metadata."),
-        ServiceNode("ledger_ocr", "Ledger OCR Node", "CRNN/TrOCR slot for handwritten khata lines with fallback parser."),
-        ServiceNode("product_vision", "Product Vision Node", "Few-shot SKU enrollment and prototype matching slot."),
-        ServiceNode("order_ner", "Order NER Node", "Code-mixed WhatsApp order entity extraction."),
+        ServiceNode("ledger_ocr", "Ledger Extraction", "Operator transcription or local CRNN inference with explicit provenance."),
+        ServiceNode("product_vision", "Product Catalog", "Records operator labels or filename-derived labels without invented confidence."),
+        ServiceNode("order_ner", "Order Parser", "Deterministic normalization of submitted code-mixed order text."),
         ServiceNode("graph", "Business Graph Node", "Merges SKUs, customers, transactions, and invoices."),
-        ServiceNode("forecast", "Forecast Node", "Demand, risk, and anomaly intelligence services."),
+        ServiceNode("forecast", "Demand Signal", "Transparent sales-velocity and review heuristics."),
         ServiceNode("erp", "ERP Builder Node", "Builds inventory, CRM, invoice, and analytics views."),
         ServiceNode("export", "Export Node", "Writes JSON, CSV, HTML, and report artifacts."),
     ]
@@ -92,6 +93,7 @@ class StartupConversionService:
     def __init__(self, output_root: Path | None = None) -> None:
         self.output_root = output_root or OUTPUT_DIR
         self.pipeline = SynapseERPPipeline()
+        self._ocr_model: Any = None
 
     def services(self) -> list[dict[str, Any]]:
         return [asdict(node) for node in self.service_catalog]
@@ -104,6 +106,7 @@ class StartupConversionService:
         chat_text: str = "",
         product_hints: str = "",
         conversion_id: str | None = None,
+        event_handler: Callable[[dict[str, Any]], None] | None = None,
     ) -> ConversionResult:
         conversion_id = conversion_id or self._new_conversion_id()
         conversion_dir = self.output_root / "conversions" / conversion_id
@@ -112,41 +115,93 @@ class StartupConversionService:
         assets: list[ImageAsset] = []
         nodes: list[ServiceNode] = []
 
-        nodes.append(self._node("gateway", "completed", self._gateway_detail(ledger_image_paths, product_image_paths, chat_text)))
-        for image_path in ledger_image_paths:
-            assets.append(self._inspect_image(image_path, "ledger_note", conversion_id))
-        for image_path in product_image_paths:
-            assets.append(self._inspect_image(image_path, "product_photo", conversion_id))
-        nodes.append(self._node("preprocess", "completed", f"{len(assets)} image assets stored and profiled."))
-
-        ledger_lines, ocr_detail = self._extract_ledger_lines(ledger_text, ledger_image_paths)
-        nodes.append(self._node("ledger_ocr", "completed", ocr_detail))
-
-        product_catalog = self._recognize_products(product_image_paths, product_hints)
-        nodes.append(self._node("product_vision", "completed", f"{len(product_catalog)} product candidates enrolled."))
-
-        chat_lines = [line.strip() for line in chat_text.splitlines() if line.strip()]
-        nodes.append(self._node("order_ner", "completed", f"{len(chat_lines)} chat/order lines normalized."))
-
-        snapshot = self.pipeline.ingest(
-            ledger_lines=ledger_lines,
-            chat_lines=chat_lines if chat_lines else None,
+        _, node = self._run_node(
+            "gateway",
+            lambda: None,
+            lambda _: self._gateway_detail(ledger_image_paths, product_image_paths, chat_text),
+            event_handler,
         )
-        nodes.append(self._node("graph", "completed", f"{len(snapshot.inventory)} SKUs and {len(snapshot.customers)} customers linked."))
-        nodes.append(self._node("forecast", "completed", snapshot.analytics.forecast_message if snapshot.analytics else "No forecast."))
+        nodes.append(node)
 
-        erp_path = render_erp_html(snapshot, output_dir=conversion_dir / "erp")
-        nodes.append(self._node("erp", "completed", "Live ERP dashboard generated."))
+        def inspect_assets() -> list[ImageAsset]:
+            inspected: list[ImageAsset] = []
+            for image_path in ledger_image_paths:
+                inspected.append(self._inspect_image(image_path, "ledger_note", conversion_id))
+            for image_path in product_image_paths:
+                inspected.append(self._inspect_image(image_path, "product_photo", conversion_id))
+            return inspected
 
-        outputs = self._write_outputs(
-            conversion_dir=conversion_dir,
-            conversion_id=conversion_id,
-            snapshot=snapshot.to_dict(),
-            product_catalog=[asdict(item) for item in product_catalog],
-            erp_path=erp_path,
-            nodes=nodes,
+        assets, node = self._run_node(
+            "preprocess",
+            inspect_assets,
+            lambda value: f"{len(value)} submitted image assets stored, checksummed, and profiled.",
+            event_handler,
         )
-        nodes.append(self._node("export", "completed", f"{len(outputs)} export files ready."))
+        nodes.append(node)
+
+        ocr_result, node = self._run_node(
+            "ledger_ocr",
+            lambda: self._extract_ledger_lines(ledger_text, ledger_image_paths),
+            lambda value: value[1],
+            event_handler,
+        )
+        ledger_lines, _ = ocr_result
+        nodes.append(node)
+
+        product_catalog, node = self._run_node(
+            "product_vision",
+            lambda: self._recognize_products(product_image_paths, product_hints),
+            lambda value: f"{len(value)} submitted product photos cataloged with explicit label provenance.",
+            event_handler,
+        )
+        nodes.append(node)
+
+        chat_lines, node = self._run_node(
+            "order_ner",
+            lambda: [line.strip() for line in chat_text.splitlines() if line.strip()],
+            lambda value: f"{len(value)} submitted chat/order lines normalized with the deterministic parser.",
+            event_handler,
+        )
+        nodes.append(node)
+
+        snapshot, node = self._run_node(
+            "graph",
+            lambda: self.pipeline.ingest(ledger_lines=ledger_lines, chat_lines=chat_lines),
+            lambda value: f"{len(value.inventory)} SKUs and {len(value.customers)} customers linked from submitted records.",
+            event_handler,
+        )
+        nodes.append(node)
+
+        _, node = self._run_node(
+            "forecast",
+            lambda: snapshot.analytics,
+            lambda value: value.forecast_message if value else "No demand signal available.",
+            event_handler,
+        )
+        nodes.append(node)
+
+        erp_path, node = self._run_node(
+            "erp",
+            lambda: render_erp_html(snapshot, output_dir=conversion_dir / "erp"),
+            lambda _: "ERP dashboard generated from this conversion snapshot.",
+            event_handler,
+        )
+        nodes.append(node)
+
+        outputs, node = self._run_node(
+            "export",
+            lambda: self._write_outputs(
+                conversion_dir=conversion_dir,
+                conversion_id=conversion_id,
+                snapshot=snapshot.to_dict(),
+                product_catalog=[asdict(item) for item in product_catalog],
+                erp_path=erp_path,
+                nodes=nodes,
+            ),
+            lambda value: f"{len(value)} JSON, CSV, report, and HTML artifacts written.",
+            event_handler,
+        )
+        nodes.append(node)
 
         result = ConversionResult(
             conversion_id=conversion_id,
@@ -165,14 +220,15 @@ class StartupConversionService:
     def _extract_ledger_lines(self, ledger_text: str, ledger_image_paths: list[Path]) -> tuple[list[str], str]:
         lines = [line.strip() for line in ledger_text.splitlines() if line.strip()]
         if lines:
-            return lines, f"{len(lines)} OCR/assist ledger lines parsed from the text panel."
+            return lines, f"{len(lines)} operator-supplied ledger lines accepted as source records."
         if ledger_image_paths:
-            generated = generate_ledger_lines(n=max(6, len(ledger_image_paths) * 4), seed=len(ledger_image_paths) + 31)
-            return generated, (
-                f"{len(ledger_image_paths)} handwritten-note images preprocessed; "
-                "demo OCR fallback produced ledger lines until trained CRNN/TrOCR weights are attached."
-            )
-        return generate_ledger_lines(n=12, seed=13), "No ledger input supplied; demo ledger sample used."
+            decoded = self._infer_ledger_images(ledger_image_paths)
+            if not decoded:
+                raise ValueError(
+                    "The local OCR checkpoint returned no readable text. Add an OCR transcription in the ledger text field."
+                )
+            return decoded, f"{len(decoded)} ledger lines inferred from {len(ledger_image_paths)} submitted images by the local CRNN checkpoint."
+        return [], "No ledger source submitted; continuing with submitted chat orders only."
 
     def _recognize_products(self, product_image_paths: list[Path], product_hints: str) -> list[ProductCandidate]:
         hints = [hint.strip() for hint in re.split(r"[\n,]+", product_hints) if hint.strip()]
@@ -180,17 +236,51 @@ class StartupConversionService:
         for index, path in enumerate(product_image_paths):
             hint = hints[index] if index < len(hints) else path.stem.replace("_", " ")
             sku = canonicalize_sku(hint)
-            confidence = 0.91 if sku != "unknown_item" and "unknown" not in sku else 0.58
+            label_source = "operator_hint" if index < len(hints) else "filename"
             candidates.append(
                 ProductCandidate(
                     sku=sku,
                     display_name=display_name(sku),
                     source_image=path.name,
-                    confidence=round(confidence, 2),
-                    status="enrolled" if confidence >= 0.7 else "needs_review",
+                    confidence=None,
+                    status="owner_labeled" if label_source == "operator_hint" else "needs_label_review",
+                    source=label_source,
                 )
             )
         return candidates
+
+    def _infer_ledger_images(self, image_paths: list[Path]) -> list[str]:
+        """Run the repository''s trained CRNN checkpoint against submitted images."""
+        import torch
+        from PIL import Image, ImageOps
+
+        from synapse_erp.models.ocr_architectures import CHAR_TO_INDEX, LedgerCRNN, decode_greedy
+
+        checkpoint_path = MODEL_DIR / "best_ledger_ocr.pt"
+        if not checkpoint_path.exists():
+            raise ValueError("No OCR checkpoint is installed. Add a ledger transcription or train the OCR model first.")
+        if self._ocr_model is None:
+            state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            args = state.get("args", {})
+            model = LedgerCRNN(
+                num_classes=len(CHAR_TO_INDEX) + 1,
+                hidden_size=int(args.get("hidden_size", 96)),
+            )
+            model.load_state_dict(state["model_state"])
+            model.eval()
+            self._ocr_model = (model, int(args.get("width", 512)), int(args.get("height", 48)))
+
+        model, width, height = self._ocr_model
+        decoded: list[str] = []
+        for path in image_paths:
+            with Image.open(path) as source:
+                image = ImageOps.autocontrast(source.convert("L")).resize((width, height))
+                pixels = torch.tensor(list(image.getdata()), dtype=torch.float32).view(height, width) / 255.0
+            with torch.no_grad():
+                text = decode_greedy(model(pixels.unsqueeze(0).unsqueeze(0)))[0].strip()
+            if text:
+                decoded.append(text)
+        return decoded
 
     def _write_outputs(
         self,
@@ -258,20 +348,44 @@ class StartupConversionService:
             signal=signal,
         )
 
-    def _node(self, node_id: str, status: str, detail: str) -> ServiceNode:
+    def _node(self, node_id: str, status: str, detail: str, latency_ms: float = 0) -> ServiceNode:
         template = next(node for node in self.service_catalog if node.id == node_id)
-        latency = {
-            "gateway": 18,
-            "preprocess": 46,
-            "ledger_ocr": 132,
-            "product_vision": 94,
-            "order_ner": 55,
-            "graph": 37,
-            "forecast": 62,
-            "erp": 81,
-            "export": 24,
-        }.get(node_id, 30)
-        return ServiceNode(template.id, template.name, template.role, status, detail, latency)
+        return ServiceNode(template.id, template.name, template.role, status, detail, max(0, round(latency_ms, 2)))
+
+    def _run_node(
+        self,
+        node_id: str,
+        operation: Callable[[], Any],
+        detail: Callable[[Any], str],
+        event_handler: Callable[[dict[str, Any]], None] | None,
+    ) -> tuple[Any, ServiceNode]:
+        template = next(node for node in self.service_catalog if node.id == node_id)
+        if event_handler:
+            event_handler({"node_id": node_id, "status": "running", "message": template.name})
+        started = time.perf_counter()
+        try:
+            value = operation()
+        except Exception as exc:
+            duration = (time.perf_counter() - started) * 1000
+            if event_handler:
+                event_handler({
+                    "node_id": node_id,
+                    "status": "failed",
+                    "message": str(exc),
+                    "duration_ms": round(duration, 2),
+                })
+            raise
+        duration = (time.perf_counter() - started) * 1000
+        message = detail(value)
+        node = self._node(node_id, "completed", message, duration)
+        if event_handler:
+            event_handler({
+                "node_id": node_id,
+                "status": "completed",
+                "message": message,
+                "duration_ms": round(duration, 2),
+            })
+        return value, node
 
     def _output(self, label: str, fmt: str, path: Path, conversion_id: str) -> ConversionOutput:
         relative = path.relative_to(self.output_root).as_posix()

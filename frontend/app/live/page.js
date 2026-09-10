@@ -79,7 +79,8 @@ export default function LivePage() {
   const fx = snapshot?.fx?.rates || {};
   const crypto = snapshot?.crypto?.coins || [];
   const commodities = snapshot?.commodities?.commodities || [];
-  const isLive = snapshot?.live !== false;
+  const isLive = snapshot?.live === true;
+  const liveSourceCount = (snapshot?.sources || []).filter((source) => source.live).length;
 
   return (
     <main className="live-page">
@@ -119,7 +120,7 @@ export default function LivePage() {
           hint={`${pct(crypto[0]?.change_24h)} 24h`}
           trend={crypto[0]?.change_24h}
         />
-        <StatCard icon={<Radio size={18} />} label="Data sources" value="3 live" hint="ECB · CoinGecko · GoldAPI" />
+        <StatCard icon={<Radio size={18} />} label="Live data sources" value={liveSourceCount} hint="truthful source health" />
         <StatCard
           icon={<Cpu size={18} />}
           label="Trained models"

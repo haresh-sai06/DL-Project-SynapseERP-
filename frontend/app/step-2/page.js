@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Boxes, BrainCircuit, Camera, ClipboardList, Download, LineChart, Network, ReceiptText, UploadCloud } from "lucide-react";
+import { ArrowRight, Boxes, BrainCircuit, Camera, ClipboardList, Download, Gauge, LineChart, Network, ReceiptText, Sparkles, Terminal, UploadCloud } from "lucide-react";
 import { loadConversion } from "../lib/flow";
 
 const nodeIcons = {
@@ -37,8 +37,8 @@ export default function NodesPage() {
       <section className="step-shell">
         <div className="step-intro">
           <p className="eyebrow">Step 2</p>
-          <h1>Watch the backend conversion graph.</h1>
-          <p>Each service runs as a visible node: upload, preprocessing, OCR, product vision, order NER, graph, forecast, ERP, and export.</p>
+          <h1>Inspect what the pipeline actually did.</h1>
+          <p>Every duration below is measured during this conversion. The event journal records the source and outcome without replaying simulated work.</p>
         </div>
 
         <div className="step-card nodes-page-card">
@@ -46,9 +46,25 @@ export default function NodesPage() {
             <span>Conversion ID</span>
             <strong>{conversion.conversion_id}</strong>
             <p>{conversion.created_at}</p>
+            <div className="runtime-total"><Gauge size={15} /> {formatDuration(conversion.runtime?.duration_ms)} total runtime</div>
+          </div>
+          <div className="conversion-log-panel">
+            <div className="terminal-bar"><Terminal size={14} /><span>Conversion event journal</span></div>
+            <div className="terminal-body expanded">
+              {(conversion.runtime?.events || []).map((event) => (
+                <p className="terminal-line" key={event.id}>
+                  <time>{new Date(event.timestamp).toLocaleTimeString([], { hour12: false })}</time>
+                  <span>{event.metadata?.node_id || event.category}</span>
+                  {event.message}
+                  {event.duration_ms != null ? ` · ${event.duration_ms} ms` : ""}
+                </p>
+              ))}
+            </div>
           </div>
           <div className="node-grid page-node-grid">
-            {conversion.nodes.map((node) => <NodeCard node={node} key={node.id} />)}
+            {conversion.nodes.map((node, index) => (
+              <NodeCard node={node} key={node.id} index={index} />
+            ))}
           </div>
         </div>
 
@@ -64,17 +80,17 @@ export default function NodesPage() {
   );
 }
 
-function NodeCard({ node }) {
+function NodeCard({ node, index }) {
   const Icon = nodeIcons[node.id] || Network;
   return (
-    <article className="node-card complete">
+    <article className="node-card complete phase-card-animated" style={{ animationDelay: `${index * 0.08}s` }}>
       <div>
         <Icon size={18} />
-        <small>{node.status}</small>
+        <small><Sparkles size={11} className="inline-icon" /> {node.status}</small>
       </div>
       <strong>{node.name}</strong>
       <p>{node.detail || node.role}</p>
-      {node.latency_ms ? <span className="latency">{node.latency_ms} ms</span> : null}
+      <span className="latency">{formatDuration(node.latency_ms)}</span>
     </article>
   );
 }
@@ -87,4 +103,9 @@ function EmptyStep({ title, text }) {
       <Link href="/step-1" className="primary-button">Go to Step 1</Link>
     </section>
   );
+}
+
+function formatDuration(value) {
+  if (value == null) return "—";
+  return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${Math.round(value)} ms`;
 }

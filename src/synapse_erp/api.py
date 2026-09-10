@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import shutil
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,10 +17,11 @@ from pydantic import BaseModel
 from synapse_erp.config import MODEL_DIR, OUTPUT_DIR, PROJECT_ROOT
 from synapse_erp.erp import render_erp_html
 from synapse_erp.live_data import fetch_historical_fx, get_market_snapshot
+from synapse_erp.observability import observability
 from synapse_erp.pipeline import SynapseERPPipeline
 from synapse_erp.platform import StartupConversionService, safe_upload_name
 from synapse_erp.web import PLATFORM_HTML
-from synapse_erp.workspace import DemoAuthService, LoginRequest, WorkspaceStore
+from synapse_erp.workspace import WorkspaceStore
 
 
 class IngestRequest(BaseModel):
@@ -48,8 +50,32 @@ app.mount("/project-assets", StaticFiles(directory=PROJECT_ROOT / "docs"), name=
 
 pipeline = SynapseERPPipeline()
 conversion_service = StartupConversionService()
-auth_service = DemoAuthService()
 workspace_store = WorkspaceStore()
+_CONVERSION_JOBS: dict[str, dict[str, Any]] = {}
+_JOBS_LOCK = threading.Lock()
+
+
+@app.middleware("http")
+async def observe_request(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or conversion_service._new_conversion_id()
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["x-request-id"] = request_id
+        return response
+    finally:
+        if request.url.path != "/api/observability":
+            duration_ms = (time.perf_counter() - started) * 1000
+            observability.record(
+                "http.request",
+                f"{request.method} {request.url.path}",
+                level="error" if status >= 500 else "info",
+                trace_id=request_id,
+                duration_ms=duration_ms,
+                metadata={"method": request.method, "path": request.url.path, "status": status},
+            )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -58,13 +84,100 @@ def platform_home() -> str:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    snapshot = observability.snapshot(limit=1)
+    return {
+        "status": "ok",
+        "uptime_seconds": snapshot["uptime_seconds"],
+        "requests_observed": snapshot["metrics"]["requests"],
+    }
+
+
+@app.get("/api/observability")
+def runtime_observability(limit: int = 80) -> dict[str, object]:
+    """Measured request benchmarks and the recent durable runtime event stream."""
+    snapshot = observability.snapshot(limit=limit)
+    with _JOBS_LOCK:
+        jobs = list(_CONVERSION_JOBS.values())
+    snapshot["jobs"] = {
+        "queued": sum(job["status"] == "queued" for job in jobs),
+        "running": sum(job["status"] == "running" for job in jobs),
+        "completed": sum(job["status"] == "completed" for job in jobs),
+        "failed": sum(job["status"] == "failed" for job in jobs),
+    }
+    snapshot["sources"] = [
+        {"name": "Frankfurter / ECB", "kind": "live API", "refresh_seconds": 600},
+        {"name": "CoinGecko", "kind": "live API", "refresh_seconds": 120},
+        {"name": "Local conversion inputs", "kind": "submitted records", "refresh_seconds": 0},
+        {"name": "Model metrics", "kind": "persisted benchmark artifacts", "refresh_seconds": 0},
+    ]
+    return snapshot
 
 
 @app.get("/api/services")
 def services() -> dict[str, list[dict]]:
     return {"services": conversion_service.services()}
+
+
+@app.post("/api/conversions", status_code=202)
+async def start_conversion(
+    background_tasks: BackgroundTasks,
+    ledger_images: list[UploadFile] | None = File(default=None),
+    product_images: list[UploadFile] | None = File(default=None),
+    ledger_text: str = Form(default=""),
+    chat_text: str = Form(default=""),
+    product_hints: str = Form(default=""),
+) -> dict[str, object]:
+    """Queue a conversion and return immediately so clients can watch real progress."""
+    if not ledger_text.strip() and not chat_text.strip() and not (ledger_images or []):
+        raise HTTPException(status_code=422, detail="Submit ledger text, a ledger image, or chat order text.")
+    conversion_id = conversion_service._new_conversion_id()
+    upload_dir = OUTPUT_DIR / "uploads" / conversion_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ledger_paths = await _save_uploads(ledger_images or [], upload_dir, "ledger_note")
+    product_paths = await _save_uploads(product_images or [], upload_dir, "product_photo")
+    job = {
+        "job_id": conversion_id,
+        "conversion_id": conversion_id,
+        "status": "queued",
+        "progress": 0,
+        "created_at": _utc_now(),
+        "started_at": None,
+        "completed_at": None,
+        "duration_ms": None,
+        "events": [],
+        "nodes": {},
+        "result": None,
+        "error": None,
+    }
+    with _JOBS_LOCK:
+        _CONVERSION_JOBS[conversion_id] = job
+    queued = observability.record(
+        "conversion.queued",
+        "Conversion accepted and queued.",
+        trace_id=conversion_id,
+        metadata={"ledger_images": len(ledger_paths), "product_images": len(product_paths)},
+    )
+    job["events"].append(queued)
+    background_tasks.add_task(
+        _run_conversion_job,
+        conversion_id,
+        ledger_paths,
+        product_paths,
+        ledger_text,
+        chat_text,
+        product_hints,
+    )
+    return _job_view(job)
+
+
+@app.get("/api/conversions/{job_id}")
+def get_conversion_job(job_id: str) -> dict[str, object]:
+    with _JOBS_LOCK:
+        job = _CONVERSION_JOBS.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Conversion job {job_id} was not found.")
+        return _job_view(job)
 
 
 @app.get("/api/live")
@@ -412,11 +525,6 @@ def ner_inference(payload: dict = Body(...)) -> dict[str, object]:
         }
     except Exception as exc:
         return {"ok": False, "error": f"NER inference failed: {exc}"}
-def login(payload: LoginRequest) -> dict[str, Any]:
-    try:
-        return auth_service.login(payload)
-    except PermissionError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @app.post("/api/convert")
@@ -427,11 +535,14 @@ async def convert(
     chat_text: str = Form(default=""),
     product_hints: str = Form(default=""),
 ) -> dict:
+    if not ledger_text.strip() and not chat_text.strip() and not (ledger_images or []):
+        raise HTTPException(status_code=422, detail="Submit ledger text, a ledger image, or chat order text.")
     conversion_id = conversion_service._new_conversion_id()
     upload_dir = OUTPUT_DIR / "uploads" / conversion_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     ledger_paths = await _save_uploads(ledger_images or [], upload_dir, "ledger_note")
     product_paths = await _save_uploads(product_images or [], upload_dir, "product_photo")
+    events: list[dict[str, Any]] = []
     result = conversion_service.run_conversion(
         conversion_id=conversion_id,
         ledger_image_paths=ledger_paths,
@@ -439,39 +550,26 @@ async def convert(
         ledger_text=ledger_text,
         chat_text=chat_text,
         product_hints=product_hints,
+        event_handler=lambda event: events.append(_record_node_event(conversion_id, event)),
     )
     workspace_store.get_workspace(result.conversion_id)
-    return result.to_dict()
+    payload = result.to_dict()
+    payload["workspace_token"] = workspace_store.create_access_token(result.conversion_id)
+    payload["runtime"] = {"events": events, "duration_ms": round(sum(node.latency_ms for node in result.nodes), 2)}
+    return payload
 
 
 @app.post("/api/demo-conversion")
 async def demo_conversion() -> dict:
-    conversion_id = conversion_service._new_conversion_id()
-    upload_dir = OUTPUT_DIR / "uploads" / conversion_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    ledger_paths, product_paths = _copy_demo_assets(upload_dir)
-    ledger_text = """2026-06-01 ramesh: chini 2 kg Rs 88
-2026-06-01 anita: rice 5 kg Rs 310
-2026-06-02 salim: parle-g 10 pack Rs 100
-2026-06-03 kavya: atta 3 kg Rs 114"""
-    chat_text = """kavya: bhaiya 2kg atta bhej do
-mahesh: need 1 l oil today
-anita: kal ke liye 3 kg dal"""
-    result = conversion_service.run_conversion(
-        conversion_id=conversion_id,
-        ledger_image_paths=ledger_paths,
-        product_image_paths=product_paths,
-        ledger_text=ledger_text,
-        chat_text=chat_text,
-        product_hints="sugar\nrice\nparle-g",
+    raise HTTPException(
+        status_code=410,
+        detail="The mock conversion endpoint was retired. Submit real records to /api/conversions.",
     )
-    workspace_store.get_workspace(result.conversion_id)
-    return result.to_dict()
 
 
 @app.get("/api/workspaces/{conversion_id}")
 def get_workspace(conversion_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    _require_auth(authorization)
+    _require_auth(conversion_id, authorization)
     try:
         return workspace_store.get_workspace(conversion_id)
     except FileNotFoundError as exc:
@@ -484,7 +582,7 @@ def list_workspace_resource(
     resource: str,
     authorization: str | None = Header(default=None),
 ) -> list[dict[str, Any]]:
-    _require_auth(authorization)
+    _require_auth(conversion_id, authorization)
     try:
         return workspace_store.list_resource(conversion_id, resource)
     except (FileNotFoundError, ValueError) as exc:
@@ -498,7 +596,7 @@ def add_workspace_item(
     item: dict[str, Any] = Body(...),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _require_auth(authorization)
+    _require_auth(conversion_id, authorization)
     try:
         return workspace_store.add_item(conversion_id, resource, item)
     except ValueError as exc:
@@ -515,7 +613,7 @@ def update_workspace_item(
     patch: dict[str, Any] = Body(...),
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _require_auth(authorization)
+    _require_auth(conversion_id, authorization)
     try:
         return workspace_store.update_item(conversion_id, resource, item_id, patch)
     except ValueError as exc:
@@ -531,7 +629,7 @@ def delete_workspace_item(
     item_id: str,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    _require_auth(authorization)
+    _require_auth(conversion_id, authorization)
     try:
         return workspace_store.delete_item(conversion_id, resource, item_id)
     except ValueError as exc:
@@ -548,14 +646,12 @@ def ingest(payload: IngestRequest) -> dict:
 
 @app.get("/demo")
 def demo() -> dict:
-    return pipeline.ingest().to_dict()
+    raise HTTPException(status_code=410, detail="The synthetic demo was retired. Submit real records to /ingest.")
 
 
 @app.get("/erp", response_class=HTMLResponse)
 def erp() -> str:
-    snapshot = pipeline.ingest()
-    html_path = render_erp_html(snapshot)
-    return html_path.read_text(encoding="utf-8")
+    raise HTTPException(status_code=410, detail="Generate an ERP from submitted records through /api/conversions.")
 
 
 async def _save_uploads(files: list[UploadFile], upload_dir: Path, prefix: str) -> list[Path]:
@@ -571,21 +667,6 @@ async def _save_uploads(files: list[UploadFile], upload_dir: Path, prefix: str) 
     return saved
 
 
-def _copy_demo_assets(upload_dir: Path) -> tuple[list[Path], list[Path]]:
-    demo_dir = PROJECT_ROOT / "assets" / "demo"
-    ledger_paths: list[Path] = []
-    product_paths: list[Path] = []
-    for source in sorted(demo_dir.glob("ledger_*.png")):
-        target = _unique_path(upload_dir / source.name)
-        shutil.copyfile(source, target)
-        ledger_paths.append(target)
-    for source in sorted(demo_dir.glob("product_*.png")):
-        target = _unique_path(upload_dir / source.name)
-        shutil.copyfile(source, target)
-        product_paths.append(target)
-    return ledger_paths, product_paths
-
-
 def _unique_path(path: Path) -> Path:
     if not path.exists():
         return path
@@ -596,8 +677,133 @@ def _unique_path(path: Path) -> Path:
     raise RuntimeError(f"Could not allocate upload path for {path.name}")
 
 
-def _require_auth(authorization: str | None) -> dict[str, Any]:
+def _require_auth(conversion_id: str, authorization: str | None) -> None:
     try:
-        return auth_service.verify(authorization)
+        workspace_store.verify_access(conversion_id, authorization)
     except PermissionError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+def _run_conversion_job(
+    conversion_id: str,
+    ledger_paths: list[Path],
+    product_paths: list[Path],
+    ledger_text: str,
+    chat_text: str,
+    product_hints: str,
+) -> None:
+    started = time.perf_counter()
+    with _JOBS_LOCK:
+        job = _CONVERSION_JOBS[conversion_id]
+        job["status"] = "running"
+        job["started_at"] = _utc_now()
+    _append_job_event(
+        conversion_id,
+        observability.record("conversion.started", "Conversion worker started.", trace_id=conversion_id),
+    )
+    try:
+        result = conversion_service.run_conversion(
+            conversion_id=conversion_id,
+            ledger_image_paths=ledger_paths,
+            product_image_paths=product_paths,
+            ledger_text=ledger_text,
+            chat_text=chat_text,
+            product_hints=product_hints,
+            event_handler=lambda event: _handle_job_node_event(conversion_id, event),
+        )
+        workspace_store.get_workspace(result.conversion_id)
+        token = workspace_store.create_access_token(result.conversion_id)
+        duration_ms = (time.perf_counter() - started) * 1000
+        completed = observability.record(
+            "conversion.completed",
+            "Conversion completed and workspace access initialized.",
+            trace_id=conversion_id,
+            duration_ms=duration_ms,
+            metadata={"outputs": len(result.outputs), "nodes": len(result.nodes)},
+        )
+        _append_job_event(conversion_id, completed)
+        with _JOBS_LOCK:
+            job = _CONVERSION_JOBS[conversion_id]
+            payload = result.to_dict()
+            payload["workspace_token"] = token
+            payload["runtime"] = {
+                "duration_ms": round(duration_ms, 2),
+                "events": list(job["events"]),
+            }
+            job.update(
+                {
+                    "status": "completed",
+                    "progress": 100,
+                    "completed_at": _utc_now(),
+                    "duration_ms": round(duration_ms, 2),
+                    "result": payload,
+                }
+            )
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - started) * 1000
+        failed = observability.record(
+            "conversion.failed",
+            str(exc),
+            level="error",
+            trace_id=conversion_id,
+            duration_ms=duration_ms,
+        )
+        _append_job_event(conversion_id, failed)
+        with _JOBS_LOCK:
+            _CONVERSION_JOBS[conversion_id].update(
+                {
+                    "status": "failed",
+                    "completed_at": _utc_now(),
+                    "duration_ms": round(duration_ms, 2),
+                    "error": str(exc),
+                }
+            )
+
+
+def _handle_job_node_event(conversion_id: str, event: dict[str, Any]) -> None:
+    recorded = _record_node_event(conversion_id, event)
+    with _JOBS_LOCK:
+        job = _CONVERSION_JOBS[conversion_id]
+        job["events"].append(recorded)
+        job["nodes"][event["node_id"]] = event
+        completed = sum(node.get("status") == "completed" for node in job["nodes"].values())
+        job["progress"] = round(completed / len(conversion_service.service_catalog) * 100)
+
+
+def _record_node_event(conversion_id: str, event: dict[str, Any]) -> dict[str, Any]:
+    return observability.record(
+        "pipeline.node",
+        event["message"],
+        level="error" if event["status"] == "failed" else "info",
+        trace_id=conversion_id,
+        duration_ms=event.get("duration_ms"),
+        metadata={"node_id": event["node_id"], "status": event["status"]},
+    )
+
+
+def _append_job_event(conversion_id: str, event: dict[str, Any]) -> None:
+    with _JOBS_LOCK:
+        _CONVERSION_JOBS[conversion_id]["events"].append(event)
+
+
+def _job_view(job: dict[str, Any]) -> dict[str, object]:
+    return {
+        "job_id": job["job_id"],
+        "conversion_id": job["conversion_id"],
+        "status": job["status"],
+        "progress": job["progress"],
+        "created_at": job["created_at"],
+        "started_at": job["started_at"],
+        "completed_at": job["completed_at"],
+        "duration_ms": job["duration_ms"],
+        "events": list(job["events"]),
+        "nodes": dict(job["nodes"]),
+        "result": job["result"],
+        "error": job["error"],
+    }
+
+
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")

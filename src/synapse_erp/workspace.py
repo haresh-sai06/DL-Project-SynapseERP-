@@ -2,77 +2,15 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta
+import secrets
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
-
 from synapse_erp.config import OUTPUT_DIR
-
-
-class LoginRequest(BaseModel):
-    shop_id: str = "synapse-demo"
-    pin: str = "1234"
-
-
-class DemoAuthService:
-    """Small local auth service for demo mode.
-
-    This is intentionally dependency-light. Production should replace it with
-    OAuth/JWT, password hashing, refresh tokens, and tenant-aware database auth.
-    """
-
-    def __init__(self, secret: str = "synapse-erp-local-dev-secret") -> None:
-        self.secret = secret.encode("utf-8")
-
-    def login(self, request: LoginRequest) -> dict[str, Any]:
-        if request.shop_id != "synapse-demo" or request.pin != "1234":
-            raise PermissionError("Invalid demo credentials.")
-        payload = {
-            "sub": request.shop_id,
-            "role": "owner",
-            "exp": (datetime.utcnow() + timedelta(hours=8)).isoformat(timespec="seconds") + "Z",
-        }
-        token = self._sign(payload)
-        return {
-            "access_token": token,
-            "token_type": "bearer",
-            "shop_id": request.shop_id,
-            "role": "owner",
-            "demo_pin": "1234",
-        }
-
-    def verify(self, authorization: str | None) -> dict[str, Any]:
-        if not authorization or not authorization.lower().startswith("bearer "):
-            raise PermissionError("Missing bearer token.")
-        token = authorization.split(" ", 1)[1].strip()
-        try:
-            raw_payload, raw_signature = token.split(".", 1)
-            expected = self._signature(raw_payload)
-            if not hmac.compare_digest(raw_signature, expected):
-                raise PermissionError("Invalid token signature.")
-            payload = json.loads(_b64decode(raw_payload).decode("utf-8"))
-            expiry = datetime.fromisoformat(payload["exp"].replace("Z", ""))
-            if datetime.utcnow() >= expiry:
-                raise PermissionError("Token expired.")
-            return payload
-        except PermissionError:
-            raise
-        except Exception as exc:
-            raise PermissionError("Invalid token.") from exc
-
-    def _sign(self, payload: dict[str, Any]) -> str:
-        raw_payload = _b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-        return f"{raw_payload}.{self._signature(raw_payload)}"
-
-    def _signature(self, raw_payload: str) -> str:
-        digest = hmac.new(self.secret, raw_payload.encode("utf-8"), hashlib.sha256).digest()
-        return _b64encode(digest)
 
 
 class WorkspaceStore:
@@ -89,6 +27,31 @@ class WorkspaceStore:
     def get_workspace(self, conversion_id: str) -> dict[str, Any]:
         path = self._ensure_workspace(conversion_id)
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def create_access_token(self, conversion_id: str) -> str:
+        """Create a conversion-scoped bearer token and persist only its hash."""
+        self._ensure_workspace(conversion_id)
+        token = secrets.token_urlsafe(32)
+        payload = {
+            "conversion_id": conversion_id,
+            "token_hash": hashlib.sha256(token.encode("utf-8")).hexdigest(),
+            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        }
+        path = self._access_path(conversion_id)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return token
+
+    def verify_access(self, conversion_id: str, authorization: str | None) -> None:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise PermissionError("Missing workspace bearer token.")
+        path = self._access_path(conversion_id)
+        if not path.exists():
+            raise PermissionError("Workspace access has not been initialized.")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        token = authorization.split(" ", 1)[1].strip()
+        actual = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(actual, payload.get("token_hash", "")):
+            raise PermissionError("Invalid workspace token.")
 
     def list_resource(self, conversion_id: str, resource: str) -> list[dict[str, Any]]:
         workspace = self.get_workspace(conversion_id)
@@ -161,16 +124,12 @@ class WorkspaceStore:
     def _workspace_path(self, conversion_id: str) -> Path:
         return self.workspace_root / conversion_id / "workspace.json"
 
+    def _access_path(self, conversion_id: str) -> Path:
+        path = self.workspace_root / conversion_id / "access.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
     def _resource_name(self, resource: str) -> str:
         if resource not in self.resource_keys:
             raise ValueError("Resource must be one of inventory, customers, invoices.")
         return resource
-
-
-def _b64encode(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
-
-
-def _b64decode(value: str) -> bytes:
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode(value + padding)

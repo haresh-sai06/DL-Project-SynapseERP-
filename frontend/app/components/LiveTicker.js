@@ -33,7 +33,7 @@ export default function LiveTicker() {
     <div className="ticker-card">
       <div className="ticker-head">
         <Radio size={14} /> Live feed
-        <span className={`pulse ${data?.live !== false ? "on" : "off"}`} />
+        <span className={`pulse ${data?.live === true ? "on" : "off"}`} />
       </div>
       <div className="ticker-row">
         <span>USD → INR</span>
@@ -43,7 +43,7 @@ export default function LiveTicker() {
         <span>BTC / USD</span>
         <strong>{btc?.usd != null ? `$${Number(btc.usd).toLocaleString()}` : "—"}</strong>
       </div>
-      <div className="ticker-foot">real-time · Frankfurter + CoinGecko</div>
+      <div className="ticker-foot">{data?.live === true ? "live sources" : data ? "cached / unavailable" : "connecting"} · Frankfurter + CoinGecko</div>
     </div>
   );
 }

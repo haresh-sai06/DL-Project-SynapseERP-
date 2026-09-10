@@ -24,6 +24,7 @@ class OrderIntent:
     quantity: float
     unit: str
     raw_text: str
+    amount: float | None = None
     source: str = "whatsapp"
 
 
@@ -53,7 +54,7 @@ class Invoice:
     item: str
     quantity: float
     unit: str
-    amount: float
+    amount: float | None
 
 
 @dataclass(frozen=True)
@@ -76,4 +77,3 @@ class BusinessSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

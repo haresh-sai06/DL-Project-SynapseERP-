@@ -2,32 +2,30 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, ClipboardList, ImageUp, Loader2, Play, Zap } from "lucide-react";
+import { ChevronRight, ClipboardList, ImageUp, Loader2, ShieldCheck, Zap } from "lucide-react";
 import { API_BASE, saveConversion } from "../lib/flow";
-
-const defaultLedger = `2026-06-01 ramesh: chini 2 kg Rs 88
-2026-06-01 anita: rice 5 kg Rs 310
-2026-06-02 salim: parle-g 10 pack Rs 100
-2026-06-03 kavya: atta 3 kg Rs 114`;
-
-const defaultChat = `kavya: bhaiya 2kg atta bhej do
-mahesh: need 1 l oil today
-anita: kal ke liye 3 kg dal`;
+import ConversionProgressModal from "../components/ConversionProgressModal";
 
 export default function CapturePage() {
   const router = useRouter();
-  const [ledgerText, setLedgerText] = useState(defaultLedger);
-  const [chatText, setChatText] = useState(defaultChat);
-  const [productHints, setProductHints] = useState("sugar\nrice\nparle-g");
+  const [ledgerText, setLedgerText] = useState("");
+  const [chatText, setChatText] = useState("");
+  const [productHints, setProductHints] = useState("");
   const [ledgerFiles, setLedgerFiles] = useState([]);
   const [productFiles, setProductFiles] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+  const [jobId, setJobId] = useState("");
   const [error, setError] = useState("");
   const ledgerInputRef = useRef(null);
   const productInputRef = useRef(null);
 
   async function runConversion(event) {
     event?.preventDefault();
+    if (!ledgerText.trim() && !chatText.trim() && ledgerFiles.length === 0) {
+      setError("Add ledger text, a handwritten ledger image, or order text before converting.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -37,39 +35,44 @@ export default function CapturePage() {
       payload.append("ledger_text", ledgerText);
       payload.append("chat_text", chatText);
       payload.append("product_hints", productHints);
-      const response = await fetch(`${API_BASE}/api/convert`, { method: "POST", body: payload });
-      if (!response.ok) throw new Error(await response.text());
-      saveConversion(await response.json());
-      router.push("/step-2");
+
+      const response = await fetch(`${API_BASE}/api/conversions`, { method: "POST", body: payload });
+      if (!response.ok) throw new Error(await apiError(response));
+      const job = await response.json();
+      setJobId(job.job_id);
+      setShowProgress(true);
     } catch (conversionError) {
       setError(conversionError.message || "Conversion failed.");
-    } finally {
+      setShowProgress(false);
       setBusy(false);
     }
   }
 
-  async function runDemo() {
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch(`${API_BASE}/api/demo-conversion`, { method: "POST" });
-      if (!response.ok) throw new Error(await response.text());
-      saveConversion(await response.json());
-      router.push("/step-2");
-    } catch (demoError) {
-      setError(demoError.message || "Demo conversion failed.");
-    } finally {
-      setBusy(false);
-    }
+  function handleProgressComplete(result) {
+    saveConversion(result);
+    setBusy(false);
+    setShowProgress(false);
+    router.push("/step-2");
   }
 
   return (
     <main className="flow-page">
+      <ConversionProgressModal
+        active={showProgress}
+        jobId={jobId}
+        onComplete={handleProgressComplete}
+        onDismiss={() => {
+          setShowProgress(false);
+          setBusy(false);
+        }}
+        error={error}
+      />
+
       <section className="step-shell">
         <div className="step-intro">
           <p className="eyebrow">Step 1</p>
-          <h1>Capture the offline business records.</h1>
-          <p>Upload handwritten note images, product photos, and paste the chat/order text that the shop already has.</p>
+          <h1>Turn your source records into a working ERP.</h1>
+          <p>Everything on this screen is submitted by you. The pipeline records its source, status, and measured runtime for every stage.</p>
         </div>
 
         <form className="step-card capture-layout" onSubmit={runConversion}>
@@ -82,20 +85,32 @@ export default function CapturePage() {
           </div>
 
           <div className="capture-right">
-            <Field label="Product names / SKU hints" value={productHints} onChange={setProductHints} compact />
-            <Field label="OCR assist ledger text" value={ledgerText} onChange={setLedgerText} />
-            <Field label="WhatsApp order text" value={chatText} onChange={setChatText} />
+            <Field
+              label="Product labels (one per uploaded photo)"
+              value={productHints}
+              onChange={setProductHints}
+              placeholder={"Sugar\nBasmati rice\nParle-G"}
+              compact
+            />
+            <Field
+              label="Ledger transcription"
+              value={ledgerText}
+              onChange={setLedgerText}
+              placeholder="2026-09-10 ramesh: chini 2 kg Rs 88"
+            />
+            <Field
+              label="Chat orders"
+              value={chatText}
+              onChange={setChatText}
+              placeholder="kavya: 2 kg atta, Rs 76"
+            />
             <div className="button-row">
               <button className="primary-button" type="submit" disabled={busy}>
                 {busy ? <Loader2 className="spin" size={17} /> : <Zap size={17} />}
                 Run conversion
               </button>
-              <button className="secondary-button" type="button" onClick={runDemo} disabled={busy}>
-                <Play size={17} />
-                Load demo
-              </button>
             </div>
-            <p className="hint-line">After conversion, you will move to Step 2: backend node execution.</p>
+            <p className="hint-line"><ShieldCheck size={14} /> No sample rows are injected. Missing prices remain unpriced instead of being estimated.</p>
             {error && <p className="error">{error}</p>}
           </div>
         </form>
@@ -137,11 +152,20 @@ function PreviewGrid({ files }) {
   );
 }
 
-function Field({ label, value, onChange, compact = false }) {
+function Field({ label, value, onChange, placeholder, compact = false }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <textarea className={compact ? "compact" : ""} value={value} onChange={(event) => onChange(event.target.value)} />
+      <textarea className={compact ? "compact" : ""} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
+}
+
+async function apiError(response) {
+  try {
+    const payload = await response.json();
+    return payload.detail || "Conversion could not be started.";
+  } catch {
+    return "Conversion could not be started.";
+  }
 }
