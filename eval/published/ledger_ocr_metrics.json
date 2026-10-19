@@ -1,0 +1,12 @@
+{
+  "final_ctc_loss": 3.7798,
+  "cer": 0.9738,
+  "wer": 5.2193,
+  "samples_trained_approx": 192,
+  "epochs": 3,
+  "eval_samples": 32,
+  "example_ref": "2026-05-12 salim: chawal 5 kg rs 310.0",
+  "example_hyp": "0",
+  "elapsed_s": 470.0,
+  "note": "SHORT CPU run: CRNN-CTC on synthetic ledger lines (H=32,W=256, hidden=48). Not production handwriting OCR."
+}
