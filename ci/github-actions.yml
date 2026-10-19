@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt pytest
+          pip install -e .
+      - run: pytest -q
+      - name: OCR + synthetic forecast metrics (short)
+        env:
+          PYTHONPATH: src
+        run: |
+          python src/train_ledger_ocr.py --epochs 2 --samples 64 --batch-size 8
+          python src/train_forecaster.py --source synthetic --epochs 3 --days 120
+          test -f outputs/metrics/ledger_ocr_metrics.json
+          test -f outputs/metrics/forecast_metrics.json

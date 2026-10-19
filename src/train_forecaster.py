@@ -66,6 +66,7 @@ def train(args: argparse.Namespace) -> dict[str, float]:
     else:
         series = demand_series_for_sku(args.sku, days=args.days)
         norm_params = None
+        dataset_label = f"synthetic:{args.sku}"
     x, y = make_windows(series, window=args.window)
     split = int(len(x) * 0.8)
     x_train, y_train = x[:split], y[:split]

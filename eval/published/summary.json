@@ -1,0 +1,42 @@
+{
+  "ledger_ocr": {
+    "final_ctc_loss": 3.7798,
+    "cer": 0.9738,
+    "wer": 5.2193,
+    "samples_trained_approx": 192,
+    "epochs": 3,
+    "eval_samples": 32,
+    "example_ref": "2026-05-12 salim: chawal 5 kg rs 310.0",
+    "example_hyp": "0",
+    "elapsed_s": 470.0,
+    "note": "SHORT CPU run: CRNN-CTC on synthetic ledger lines (H=32,W=256, hidden=48). Not production handwriting OCR."
+  },
+  "forecast_synthetic": {
+    "dataset": "synthetic:sugar",
+    "source": "synthetic",
+    "lstm_mae": 0.4210513085410708,
+    "lstm_rmse": 0.5259273762231075,
+    "lstm_mape": 21.417378404206733,
+    "lstm_r2": -0.08019260473454115,
+    "moving_average_mae": 0.4613945578231292,
+    "moving_average_rmse": 0.5563768063387269,
+    "moving_average_mape": 22.00483850677653,
+    "moving_average_r2": -0.20889248701631646
+  },
+  "forecast_real_usdinr": {
+    "status": "TBD",
+    "reason": "Frankfurter/ECB returned HTTP 403 in this environment"
+  },
+  "vision_mnist": {
+    "status": "TBD",
+    "reason": "Skipped: full MNIST train too heavy under memory pressure; re-run src/train_vision.py --epochs 2"
+  },
+  "order_ner": {
+    "status": "TBD",
+    "reason": "Rule fallback only; no MuRIL fine-tune run"
+  },
+  "product_recognition": {
+    "status": "TBD",
+    "reason": "Scaffold only; no few-shot eval set"
+  }
+}

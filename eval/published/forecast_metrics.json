@@ -1,0 +1,12 @@
+{
+  "dataset": "synthetic:sugar",
+  "source": "synthetic",
+  "lstm_mae": 0.4210513085410708,
+  "lstm_rmse": 0.5259273762231075,
+  "lstm_mape": 21.417378404206733,
+  "lstm_r2": -0.08019260473454115,
+  "moving_average_mae": 0.4613945578231292,
+  "moving_average_rmse": 0.5563768063387269,
+  "moving_average_mape": 22.00483850677653,
+  "moving_average_r2": -0.20889248701631646
+}
